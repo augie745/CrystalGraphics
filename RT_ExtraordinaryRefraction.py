@@ -9,7 +9,7 @@
 #     with an irradiance set independently for each scene.
 #   - The geometric objects listed within this scene are Amethysts and Ellipsoids.
 #     The ellipsoids here are canonical, while Amethysts in this tracer must be defined by
-#     all vertices. They know their color, their transformation from global to
+#     all vertices. Ellipsoids know their color, their transformation from global to
 #     canonical coordinates, and how to detect intersections between themselves
 #     and rays. The result of these intersection calculations is three pieces
 #     of information: the global points at which intersections happen, the
@@ -42,7 +42,7 @@
 # History:
 #
 #   October 2021 -- Created by Doug Baldwin as a demonstration for Math 384.
-#   April 2024 -- Updated by Frank Bubbico to include Amethyst class and demonstrate snells law.
+#   May 2024 -- Updated by Frank Bubbico to include Amethyst class and demonstrate snells law.
 
 
 
@@ -403,10 +403,8 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
     colors[ :, missMask ] = bkgndColor
 
 
-    # All color calculations are finished, return the result.
-
     #Generating Refraction Rays
-    enterrefractionColors = np.zeros([3, nPixels])# Initialize refraction color contributions
+    refractionColors = np.zeros([3, nPixels])# Initialize refraction color contributions
     # Check what surface is refractive using a mask. Values of 4 or greater represent non-refractive objects
 
 
@@ -428,10 +426,10 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
         enterrefractiveDirections = enterrefractions[:,refractiveMask]  # establish direction vectors. Done by taking the refractions of the refractive mask.
         # RESEARCH: Calculating extraordinary refraction direction vectors from the findings of Weidlich and Wilkie
-        extordF = (eIndicies**2)*((canonicalaxes[2,:])**2)-(oIndicies**2)*(((canonicalaxes[2,:])**2)-1)
-        extordG = np.sqrt(extordF*(eIndicies**2-1+(listDot(normals,-viewVectors))**2)+(oIndicies**2-eIndicies**2)*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2))
+        extordF = (eIndicies**2)*((canonicalaxes[2,:])**2)-(oIndicies**2)*(((canonicalaxes[2,:])**2)-1) #constant F from paper
+        extordG = np.sqrt(extordF*(eIndicies**2-1+(listDot(normals,-viewVectors))**2)+(oIndicies**2-eIndicies**2)*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2)) #constant G from Paper
 
-
+        #Calculations of the actual direction vectors of ExtOrdRef. These Calculations will be broken down at a later date using smaller calculations
         cosine1 = (((eIndicies**2 - oIndicies**2)*canonicalaxes[0,:])*(oIndicies*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2)+canonicalaxes[2,:]*extordG))/(np.sqrt((eIndicies**2)*(((eIndicies**2)*((eIndicies**2)*oIndicies*(canonicalaxes[2,:]**2)-(oIndicies**3)*((canonicalaxes[2,:]**2)-1))**2)+((eIndicies**2)-(oIndicies**2))*extordG)**2))
         cosine2 = (extordF*extordG)/(np.sqrt((eIndicies**2)*(((eIndicies**2)*((eIndicies**2)*oIndicies*(canonicalaxes[2,:]**2)-(oIndicies**3)*((canonicalaxes[2,:]**2)-1))**2)+((eIndicies**2)-(oIndicies**2))*extordG)**2))
         cosine3 = np.sqrt(1-(cosine1**2)-(cosine2**2))
@@ -439,8 +437,9 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
         #Calculations for Local to Global Coordinate Transformation Matrices
 
-        ThetasBetween = np.arccos(listDot(normals,viewVectors))
-        ThetasOfRotation = ThetasBetween-(np.pi/2)
+        ThetasBetween = np.arccos(listDot(normals,viewVectors)) #Calculating angles between normal vectors and view vectors
+        ThetasOfRotation = ThetasBetween-(np.pi/2) #Using basic trig, we can determine our angle of rotation
+        # Generating series of vectors to make rotation matrices to make vectors that align with surface of amethyst
         xRotation = makeHomogeneous(makeHomogeneous(np.array([np.cos(ThetasOfRotation),np.sin(ThetasOfRotation)]),0),0)
         yRotation = makeHomogeneous(makeHomogeneous(np.array([-np.sin(ThetasOfRotation),np.cos(ThetasOfRotation)]),0),0)
         free1 = np.full_like(xRotation,[[0],[0],[1],[0]])
@@ -451,38 +450,39 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
 
         RotationMatricesForE1Basis = np.transpose(np.array([xRotation,yRotation,free1,free2]))
-        E1BasisVectors = listMatricesMultiplication(RotationMatricesForE1Basis,viewVectors)
+        E1BasisVectors = listMatricesMultiplication(RotationMatricesForE1Basis,viewVectors) # generation of aligned vector for local coord. system
 
 
-        E2BasisVectors = listCross(normals,E1BasisVectors)
+        E2BasisVectors = listCross(normals,E1BasisVectors) #third basic vector
         toLocalMatrices = np.transpose(np.array([E1BasisVectors,normals,E2BasisVectors,free2]))
-        #fromLocalMatrices = listMatrixInverse(toLocalMatrices)
-        transformedExtraordinaryRefractions = listMatricesMultiplication(toLocalMatrices,extraordinaryRefractions)
+        
+        #fromLocalMatrices = listMatrixInverse(toLocalMatrices) ignore this line
 
+        
+        #this gives us an array of the shape we'd like with most values set to 0 vectors (Due to structure of misc. transformation matrices)
+        # This practice will hopefully be more streamlined in the future.
+        transformedExtraordinaryRefractions = listMatricesMultiplication(toLocalMatrices,extraordinaryRefractions) 
         ##BRIEF IDEA #3
         for i in range(nPixels):
             if (transformedExtraordinaryRefractions[:,i] == np.array([[0],[0],[0],[0]])).all():
                 pass
             else:
                 invMat = np.linalg.inv(toLocalMatrices[i])
-                transformedExtraordinaryRefractions[:,i] = invMat @ extraordinaryRefractions[:,i]
+                transformedExtraordinaryRefractions[:,i] = invMat @ extraordinaryRefractions[:,i] #Filling values where there are refractions with proper calculations
 
+        extraordinaryRefractiveDirections = transformedExtraordinaryRefractions[:,refractiveMask] # ExtOrd Direction Vectors
 
+    # Recursively perform refraction for a max depth>0. This step is not necessary, but is here for further calculations down the line.
+        #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, enterrefractiveDirections, maxDepth - 1)
+        #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, extraordinaryRefractiveDirections, maxDepth - 1) 
 
-
-
-        extraordinaryRefractiveDirections = transformedExtraordinaryRefractions[:,refractiveMask]
-
-    # Recursively perform refraction for a max depth>0.
-        #enterrefractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, enterrefractiveDirections, maxDepth - 1)
-        #enterrefractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, extraordinaryRefractiveDirections, maxDepth - 1)
-
-
+        #Tracing through the amethyst
         refractiveObjects, refractiveHits, refractiveNormals, refractiveTs = rayTrace(scene.elements, enterrefractiveOrigins, enterrefractiveDirections) #ray trace is called here to learn where
         extOrdRefObjects, extraordinaryHits, extraordinaryNormals, extraordinaryTs = rayTrace(scene.elements, enterrefractiveOrigins, extraordinaryRefractiveDirections)
-        #refraction rays are exiting the crystal
+        
+        #rays are now exiting the crystal
 
-        exitrefractionMask = (refractiveObjects>=0)
+        #exitrefractionMask = (refractiveObjects>=0)
 
         exitrefractiveOrigins = refractiveHits + 1e-6*refractiveNormals # establish an origin point to trace out from crystal
         exitrIndicies = refractiveIndices[refractiveObjects]
@@ -491,20 +491,20 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
         exitrefractions = ((exitrIndicies*listDot(-refractiveNormals,-enterrefractiveDirections)-
                         np.sqrt(1-((exitrIndicies)**2) * (1-(listDot(-refractiveNormals,-enterrefractiveDirections))**2)))*(-refractiveNormals)) - exitrIndicies*-enterrefractiveDirections
-        exitrefractiveDirections = exitrefractions #establish direction vectors for air
+        exitrefractiveDirections = exitrefractions #establish direction vectors. This step is unnecessary but makes code cleaner
         exitextordRefractions = ((exiteIndicies*listDot(-extraordinaryNormals,-extraordinaryRefractiveDirections)-
                         np.sqrt(1-((exiteIndicies)**2) * (1-(listDot(-extraordinaryNormals,-extraordinaryRefractiveDirections))**2)))*(-extraordinaryNormals)) - exiteIndicies*-extraordinaryRefractiveDirections
-        exitextordDirections = exitextordRefractions
+        exitextordDirections = exitextordRefractions #establish direction vectors. This step is unnecessary but makes code cleaner
 
-        enterrefractionColors[:,refractiveMask] += traceForColor(scene, exitrefractiveOrigins, exitrefractiveDirections, maxDepth - 1) #trace rays for color recursively
-        enterrefractionColors[:, refractiveMask] += traceForColor(scene, exitextraordinaryOrigins,exitextordDirections, maxDepth - 1)
+        refractionColors[:,refractiveMask] += traceForColor(scene, exitrefractiveOrigins, exitrefractiveDirections, maxDepth - 1) #trace rays for color recursively
+        refractionColors[:, refractiveMask] += traceForColor(scene, exitextraordinaryOrigins,exitextordDirections, maxDepth - 1)
 
 
     #appending sets of colors together. Now including refraction colors
     colors[:, litMask] += (irradiance * lightCosines * diffuseColors[:, objects])[:, litMask]
     colors[:, litMask] += (irradiance * specularCoefficients[objects] * halfwayCosines ** shineExponents[objects])[:,
                           litMask]
-    colors[:, litMask] += enterrefractionColors[:,litMask]
+    colors[:, litMask] += refractionColors[:,litMask]
 
     return colors
 
