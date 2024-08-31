@@ -7,8 +7,8 @@
 #     The color and radiant intensity of the light source is set for all scenes
 #     in the "traceForColor" function, while ambient light is always white,
 #     with an irradiance set independently for each scene.
-#   - The geometric objects listed within this scene are Amethysts and Ellipsoids.
-#     The ellipsoids here are canonical, while Amethysts in this tracer must be defined by
+#   - The geometric objects listed within this scene are crystals and Ellipsoids.
+#     The ellipsoids here are canonical, while crystals in this tracer must be defined by
 #     all vertices. They know their color, their transformation from global to
 #     canonical coordinates, and how to detect intersections between themselves
 #     and rays. The result of these intersection calculations is three pieces
@@ -35,9 +35,9 @@
 #     0 to 1 range allowed in images, a "scaleColor" function adjusts the color
 #     values in the final image to the required range.
 #   - This particular tracer utilizes snell's law to generate refraction rays from the
-#     viewer into the scene. Since the objects in this tracer are stricly 3D objects, the
+#     viewer into the scene. Since the objects in this tracer are strictly 3D objects, the
 #     ray trace function is used to trace rays from one side of an object to another, giving the user
-#     exit points from these objects to trace refraction rays into the scene, thus demonstrating refraction.
+#     exit points from these objects to trace refraction rays back into the scene, thus demonstrating refraction.
 
 # History:
 #
@@ -87,6 +87,7 @@ class Scene :
 #       o The coefficient of specular reflection for all colors of light, in
 #         attribute "specular"
 #       o A shininess exponent for Phong's lighting model, in attribute "shine"
+#       o An index of refraction for ordinary refraction
 #   - An "intersect" method that takes lists of ray origin points and ray
 #     directions, in the global coordinate system, as its arguments, and
 #     determines where those rays intersect the object. This method returns
@@ -100,7 +101,18 @@ class Scene :
 #         t values are infinite.
 
 
-# A class that generates Amethyst crystals. Taking an input
+# A class that generates Amethyst crystals. This crystal class requires 14 input points that represent the position
+# of the "hexagonal prism body" of the crystal, as well as the two points that represent the tips of each amethyst
+# crystal.
+#   - These crystals rely on the "Triangle" and "Parallelogram" classes called in the import statements at the
+#     beginning of this file. These classes enable a simple tracking of spacial information based on
+#     "faces of the amethyst." Further information on this is described below.
+#   - These crystals also contain the color information, as well as specular and shine values consistent with what
+#     is outlined in the paragraphs above.
+#   - These amethysts also take input titled "RefractiveIndex." As described in the name, this is a refractive index
+#     of said amethyst, which will be used to calculate refractive rays. In this tracer, it is assumed that
+#     the index of air is 1.00000, or that this amethyst exists within a vacuum.
+
 class Amethyst:
     #define 14 pts to construct shape of amethyst
     def __init__( self,
@@ -113,12 +125,15 @@ class Amethyst:
         self.specular = specular
         self.shine = shine
         self.RefractiveIndex = RefractiveIndex
-        # Generate series of planes that make up amethyst. This code follows a pattern such that
+        # Generate a series of 3 planes that make up amethyst. This code follows a pattern such that
         # points exist as such:
         #           pt13
-        #       pt4     pt2
-        #       pt3     pt1
-        #           pt14 to generate
+        #         /     \
+        #       pt4-----pt2
+        #       |        |
+        #       pt3-----pt1
+        #         \     /
+        #           pt14 as follows:
 
         self.PlaneA = Parallelogram(pt1, pt2, pt3)
         self.UpperA = Triangle(pt2, pt13, pt4)
@@ -140,20 +155,19 @@ class Amethyst:
         self.LowerF = Triangle(pt11, pt1, pt14)
 
 
-
     # intersect methods calls the raytrace function. An apt description is found in
     # the raytacefunc.py file.
     def intersect(self, origins, directions):
         amethystObjects = [self.PlaneA, self.UpperA, self.LowerA, self.PlaneB, self.UpperB, self.LowerB,
                            self.PlaneC, self.UpperC, self.LowerC, self.PlaneD, self.UpperD, self.LowerD,
                            self.PlaneE, self.UpperE, self.LowerE, self.PlaneF, self.UpperF, self.LowerF]
-        #amethystObjects = [self.PlaneA, self.UpperA, self.LowerA]
         amethystObjects, finalPoints, finalNormals, finalTs = rayTrace(amethystObjects, origins, directions)
         return finalTs, finalPoints, finalNormals
 
 
 
-# A class that represents ellipsoids.
+# A class that represents ellipsoids. These elipsoids operate in a standard method.
+# Further description can be found below. These ellipsoids also have RefractiveIndex inputs that enable refraction.
 class Ellipsoid :
 
 
@@ -248,9 +262,11 @@ class Ellipsoid :
         # All done. Return the t values, intersection points, and normals.
         return finalTs, finalPoints, finalNormals
 
-
+# A trigonal prism class that models the same use of planes to generate its shape.
+# This prism also has a RefractiveIndex input to demonstrate refraction. This object
+# was made to test refraction in other scenes that could be compared to real life objects.
 class trigonalPrism:
-        # define 14 pts to construct shape of amethyst
+        # define 6 pts to construct shape of prism
         def __init__(self,
                      pt1, pt2, pt3, pt4, pt5, pt6,
                      red, green, blue, specular, shine, RefractiveIndex):
@@ -261,18 +277,13 @@ class trigonalPrism:
             self.specular = specular
             self.shine = shine
             self.RefractiveIndex = RefractiveIndex
-
+            # Planes are done in a similar manner to the Amethyst class.
+            # Top triangle and bottom triangle complete the shape.
             self.PlaneA = Parallelogram(pt1, pt2, pt3)
             self.PlaneB = Parallelogram(pt3, pt4, pt5)
             self.PlaneC = Parallelogram(pt5, pt6, pt1)
             self.Top = Triangle(pt2, pt6, pt4)
             self.Bottom = Triangle(pt1, pt3, pt5)
-
-            self.toCanonical = np.array([[1.0, 0.0, 0.0, 0.0],
-                                         [0.0, 1.0, 0.0, 0.0],
-                                         [0.0, 0.0, 1.0, 0.0],
-                                         [0.0, 0.0, 0.0, 1.0]])
-            self.normal = np.array([[0.0], [1.0], [0.0], [0.0]])
 
         def intersect(self, origins, directions):
             trigonalPrismObjects = [self.PlaneA, self.PlaneB, self.PlaneC, self.Top, self.Bottom]
@@ -285,12 +296,9 @@ class trigonalPrism:
 
 
 
-
-
-
-
 # The function that traces a set of rays from a single origin through a scene,
-# returning a list of pixel colors for an image of that scene.
+# returning a list of pixel colors for an image of that scene. The trace for color function has
+# been modified to contain code that demonstrates refraction.
 
 def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
@@ -380,8 +388,6 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
     lightCosines = np.maximum( listDot( normals, unitLightVectors ), 0.0)
 
 
-
-
     # Add the contribution of specular reflection, using the angle between the
     # halfway vector and the normal as the basis for scaling light intensity.
 
@@ -396,55 +402,75 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
     colors[ :, missMask ] = bkgndColor
 
 
-    # All color calculations are finished, return the result.
-
     #Generating Refraction Rays
-    refractionColors = np.zeros([3, nPixels])# Initialize refraction color contributions
-    # Check what surface is refractive using a mask. Values of 4 or greater represent non-refractive objects
+
+    # Initialize refraction color contributions
+    refractionColors = np.zeros([3, nPixels])
+    # Check what surface is refractive using a mask.
+    # Values of 4 or greater represent non-refractive objects. This is important as it provides a way for objects
+    # to not demonstrate refraction. This property models real life behavior, following that most any naturally
+    # occurring object will not have a refractive index over 4.
 
     refractiveMask = (refractiveIndices[objects] < 4) & (objects >= 0)
 
-    rIndices = 1/refractiveIndices[objects] # generate indices of refraction
+    # generate indices of refraction for calculation.
+    # This is following some standard calculations on how to perform refraction while ray tracing.
+    # Finding the derivations for these formulas can be done with a simple google search.
+    rIndices = 1/refractiveIndices[objects]
 
+    # Recursively generate refractive rays:
     if np.any(refractiveMask) and maxDepth > 0:
-        enterrefractiveOrigins = hits[:, refractiveMask] - 1e-6 * normals[:,
-                                                                  refractiveMask]  # establish origins of refraction
-        # generate refraction rays using recursion. Refraction rays are called using expansions of snells law
+
+        # establish origins of refraction
+        enterrefractiveOrigins = hits[:, refractiveMask] - 1e-6 * normals[:,refractiveMask]
+
+        # generate refraction rays using recursion. Refraction direction vectors are created from snell's law.
         enterrefractions = ((rIndices * listDot(normals, viewVectors) -
                              np.sqrt(1 - ((rIndices) ** 2) * (1 - (
                                  listDot(normals, viewVectors)) ** 2))) * normals) - rIndices * viewVectors
 
+        # Establish direction vectors. Done by taking the refractions of the refractive mask.
         enterrefractiveDirections = enterrefractions[:,
-                                    refractiveMask]  # establish direction vectors. Done by taking the refractions of the refractive mask.
-        # Recursively perform refraction for a max depth>0.
-        refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins,
-                                                                 enterrefractiveDirections, maxDepth - 1)
+                                    refractiveMask]
 
+        # misc.
+        #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins,enterrefractiveDirections, maxDepth - 1)
+
+        # Trace through the given refractive object with these direction vectors to find where light exits.
+        # Then return this information to calculate exiting direction vectors. No mask is required here.
         refractiveObjects, refractiveHits, refractiveNormals, refractiveTs = rayTrace(scene.elements,
                                                                                       enterrefractiveOrigins,
                                                                                       enterrefractiveDirections)  # ray trace is called here to learn where
-        # refraction rays are exiting the crystal
 
-        exitrefractiveOrigins = refractiveHits + 1e-6 * refractiveNormals  # establish an origin point to trace out from crystal
-        exitrIndices = refractiveIndices[refractiveObjects] # establish indices for exiting rays
+        # Now we can calculate the exiting rays of refraction from a given medium.
+        # Establish an origin point to trace out from object.
+        exitrefractiveOrigins = refractiveHits + 1e-6 * refractiveNormals
 
+        # Establish refractive indices for exiting rays.
+        exitrIndices = refractiveIndices[refractiveObjects]
+
+        # Calculate exiting direction vectors using Snell's Law.
         exitrefractions = ((exitrIndices * listDot(-refractiveNormals, -enterrefractiveDirections) -
                             np.sqrt(1 - ((exitrIndices) ** 2) * (
                                         1 - (listDot(-refractiveNormals, -enterrefractiveDirections)) ** 2))) * (
-                               -refractiveNormals)) - exitrIndices * -enterrefractiveDirections #calculate snell's law for rays exiting
-        exitrefractiveDirections = exitrefractions  # establish direction vectors for air
+                               -refractiveNormals)) - exitrIndices * -enterrefractiveDirections
 
+        # Establish direction vectors for exiting refractive rays.
+        exitrefractiveDirections = exitrefractions
+
+        # Recursively perform refraction for a max depth>0.
+        # This will trace rays for color recursively.
         refractionColors[:, refractiveMask] += traceForColor(scene, exitrefractiveOrigins,
                                                                   exitrefractiveDirections,
-                                                                  maxDepth - 1)  # trace rays for color recursively
+                                                                  maxDepth - 1)
 
-    #appending sets of colors together. Now including refraction colors
+
+    # All color calculations are finished, return the result by
+    # appending sets of colors together. Now including refraction colors
     colors[:, litMask] += (irradiance * lightCosines * diffuseColors[:, objects])[:, litMask]
     colors[:, litMask] += (irradiance * specularCoefficients[objects] * halfwayCosines ** shineExponents[objects])[:,
                           litMask]
     colors[:, litMask] += refractionColors[:,litMask]
-
-
 
     return colors
 
@@ -476,10 +502,8 @@ def scaleColor( pixels ) :
 
 
 
-# A scene consisting of a single matte white amethyst, standing upright
-# in front of the viewer.  This is the most basic test. Functions called here are the
-#amethyst and scene functions.
-
+# A scene consisting of a single matte amethyst, standing upright
+# in front of the viewer. This is the most basic test.
 def oneAmethystScene() :
     scaleval=0.5
     return Scene( np.array( [ [0.0], [8.0], [10.0], [1.0] ] ), 0.0,
@@ -499,7 +523,10 @@ def oneAmethystScene() :
                               np.array( [ [0.0], [-2.5], [-1.0], [1.0] ] ),
                               0.4,0.12,0.4,.45,1, 1.54425)] )
 
-def oneAmethystandoneSphereScene() :
+# A scene depicting a crystal and a spheroid. This scene is meant to create
+# an unnecessarily (but necessary) large object behind the crystal to view
+# very visible results of refraction.
+def oneAmethystAndOneSpheroidScene() :
     scaleval=0.5
     # for copy/pasting /scaleval
     return Scene( np.array( [ [0.0], [2.0], [20.0], [1.0] ] ), 0.0,
@@ -522,7 +549,10 @@ def oneAmethystandoneSphereScene() :
                                12.0, 1, 0.5,
                                1.0, 0.0, 0.0, 0.8, 1.0,4.5) ] )
 
-def twospheresscene() :
+# A scene depicting a refractive sphere and a large spheroid
+# behind it. This scene was used extensively to validate the
+# results of refraction being correct.
+def oneSphereAndOneSpheroid() :
     return Scene(np.array( [ [7.0], [2.0], [20.0], [1.0] ] ), 0.0,
                  [Ellipsoid(np.array([[0.0], [0.0], [-1.0], [1.0]]),
                                0.5, 0.5, 0.5,
@@ -532,7 +562,11 @@ def twospheresscene() :
                             1.0, 0.0, 0.0, 0.8, 1.0, 4.5)
                   ])
 
-def oneAmethystandTwoLasersScene() :
+# A scene depicting two spheroids behind an amethyst, one spheroid
+# is in front of the other, and the purpose of this scene is to
+# observe behavior of refractive rays.
+
+def oneAmethystAndTwoSpheroidsScene() :
     scaleval=0.5
     # for copy/pasting /scaleval
     return Scene( np.array( [ [10.0], [2.0], [20.0], [1.0] ] ), 0.0,
@@ -558,7 +592,8 @@ def oneAmethystandTwoLasersScene() :
                               6.0, 0.55, 0.5,
                               0.0, 0.0, 1.0, 0.8, 1.0, 4.5)
                     ] )
-
+# This scene is a recreation of the previous scene with a
+# trigonal prism instead of an amethyst.\
 def trigonalPrismScene3() :
     return Scene(np.array([ [5.0], [3], [20.0], [1.0] ] ), 0.0,
                  [trigonalPrism(np.array([[0.0], [-1.0],[-1.0],[1.0]]),
@@ -575,7 +610,9 @@ def trigonalPrismScene3() :
                             0.0, 0.0, 1.0, 0.8, 1.0, 4.5)
                   ])
 
-def twolazersScene3() :
+# This scene is to display/compare the two spheroids behind the
+# amethyst/trigonal prism in the last 2 scenes.
+def twoSpheroidsScene3() :
     return Scene(np.array([ [5.0], [3], [20.0], [1.0] ] ), 0.0,
                  [
                   Ellipsoid(np.array([[-5.0], [0.0], [-5.0], [1.0]]),
@@ -585,6 +622,8 @@ def twolazersScene3() :
                             6.0, 0.25, 0.5,
                             0.0, 0.0, 1.0, 0.8, 1.0, 4.5)
                   ])
+
+# Scenes behind this point are misc.
 
 def trigonalPrismScene1() :
     return Scene(np.array([ [7.0], [0.6], [20.0], [1.0] ] ), 0.0,
@@ -618,7 +657,7 @@ def trigonalPrismScene2() :
 
 # Set up the scene.
 
-scene = twospheresscene()
+scene = trigonalPrismScene2()
 
 
 # Define the focal point and image grid. For this ray tracer, the image grid
