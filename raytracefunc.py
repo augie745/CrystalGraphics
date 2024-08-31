@@ -1,3 +1,5 @@
+# Created by Doug Baldwin (July 2021)
+
 #   - The "rayTrace" function takes a list of geometric objects and a set of rays
 #     as arguments, and returns 4 lists describing the first intersection each
 #     ray has with an object in the scene: the index of the object intersected,
