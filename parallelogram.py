@@ -1,3 +1,10 @@
+# Adapted by Frank Bubbico (February 2024) from Doug Baldwin
+# The purpose of this file is to provide parallelogram objects for varying purposes.
+
+# This parallelogram class is designed to contain no color information, only spatial information. This allows for the
+# object to be called later as a piece of the amethyst class. This will also be used in other object classes in a
+# similar way. This class is not unlike the triangle class from triangle.py. The code varies in generating the shape from
+# the E1/E2 vectors.
 
 import numpy as np
 from RayTracingUtilities import  normalize, \
@@ -91,6 +98,8 @@ class Parallelogram :
         # All done. Return t values, intersection points, and normals.
         return finalTs, finalPoints, finalNormals
 
+# The parallelogram class listed below is only for the use of generating a checkerboard like object to view results
+# of refractive properties on.
 
 class Parallelogram2 :
 
