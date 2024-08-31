@@ -2,12 +2,12 @@
 # History:
 #
 #   July 2021 -- Created by Doug Baldwin.
+#   April 2024 -- Updated by Frank Bubbico.
 
+# The purpose of this file is to contain functions that are primarily numpy based and
+# are repeatedly used throughout other files in this branch.
 
 import numpy as np
-
-
-
 
 # I use NumPy matrices to represent "lists" of points, vectors, colors, and
 # pretty much any other multi-component value. The idea behind all such lists
@@ -124,21 +124,24 @@ def makeColorImage( color, nRows, nCols ) :
     return np.tile( color, [nRows, nCols, 1] )
 
 
+# Further Developments
+
 # Given a numpy array of vectors with an extra dimension of size 1, return the information
 # contained within the array in the form of a [4,:] matrix for use of vector calculation.
 # The purpose this function serves is to correct issues when designing matrices out of data that
-# is already a numpy array like the instance in line 323 of RT_ExtraordinaryRefraction.py.
+# is already a numpy array like the instance in line 323 of RT3_ExtraordinaryRefraction.py.
 def dimensionate(vectors):
     return np.array([vectors[:,0,0],vectors[:,1,0],vectors[:,2,0],vectors[:,3,0]])
 
-# Given a list of 4x4 matrices (indexed [x,0:3,0:3]) and a list of vectors of length x, return a matrix @ vector calculation
-#for each vector in the list.
+# Given a list of 4x4 matrices (indexed [x,0:3,0:3]) and a list of vectors of length x,
+# return a "matrix @ vector" calculation for each vector in the list.
 def listMatricesMultiplication(matrices, vectors):
     return np.array([matrices[:,0,0]*vectors[0,:]+matrices[:,0,1]*vectors[1,:]+matrices[:,0,2]*vectors[2,:]+matrices[:,0,3]*vectors[3,:],
                      matrices[:,1,0]*vectors[0,:]+matrices[:,1,1]*vectors[1,:]+matrices[:,1,2]*vectors[2,:]+matrices[:,1,3]*vectors[3,:],
                      matrices[:,2,0]*vectors[0,:]+matrices[:,2,1]*vectors[1,:]+matrices[:,2,2]*vectors[2,:]+matrices[:,2,3]*vectors[3,:],
                      matrices[:,3,0]*vectors[0,:]+matrices[:,3,1]*vectors[1,:]+matrices[:,3,2]*vectors[2,:]+matrices[:,3,3]*vectors[3,:]])
 
-
+# Simple function designed to return an inversed list of matrices. This typically yields a list of the form
+# required in the function shown above.
 def listMatrixInverse(matrix):
     return np.array([np.linalg.inv(matrix[:])])
