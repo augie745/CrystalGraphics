@@ -7,9 +7,9 @@
 #     The color and radiant intensity of the light source is set for all scenes
 #     in the "traceForColor" function, while ambient light is always white,
 #     with an irradiance set independently for each scene.
-#   - The geometric objects listed within this scene are Amethysts and Ellipsoids.
-#     The ellipsoids here are canonical, while Amethysts in this tracer must be defined by
-#     all vertices. Ellipsoids know their color, their transformation from global to
+#   - The geometric objects listed within this scene are crystals and Ellipsoids.
+#     The ellipsoids here are canonical, while crystals in this tracer must be defined by
+#     all vertices. They know their color, their transformation from global to
 #     canonical coordinates, and how to detect intersections between themselves
 #     and rays. The result of these intersection calculations is three pieces
 #     of information: the global points at which intersections happen, the
@@ -35,14 +35,18 @@
 #     0 to 1 range allowed in images, a "scaleColor" function adjusts the color
 #     values in the final image to the required range.
 #   - This particular tracer utilizes snell's law to generate refraction rays from the
-#     viewer into the scene. Since the objects in this tracer are stricly 3D objects, the
+#     viewer into the scene. Since the objects in this tracer are strictly 3D objects, the
 #     ray trace function is used to trace rays from one side of an object to another, giving the user
-#     exit points from these objects to trace refraction rays into the scene, thus demonstrating refraction.
+#     exit points from these objects to trace refraction rays back into the scene, thus demonstrating refraction.
+#   - This tracer also utilizes calculations found in Weidlich and Wilkie's '08 paper
+#     "Realistic Rendering of Birefringency in Uniaxial Crystals" which details methods of calculating
+#     the direction vectors of extraordinary refraction.
 
 # History:
 #
 #   October 2021 -- Created by Doug Baldwin as a demonstration for Math 384.
-#   May 2024 -- Updated by Frank Bubbico to include Amethyst class and demonstrate snells law.
+#   April 2024 -- Updated by Frank Bubbico to include Amethyst class and demonstrate snell's law,
+#   as well as extraordinary refraction.
 
 
 
@@ -88,6 +92,7 @@ class Scene :
 #       o The coefficient of specular reflection for all colors of light, in
 #         attribute "specular"
 #       o A shininess exponent for Phong's lighting model, in attribute "shine"
+#       o An index of ordinary refraction and a separate index of extraordinary refraction.
 #   - An "intersect" method that takes lists of ray origin points and ray
 #     directions, in the global coordinate system, as its arguments, and
 #     determines where those rays intersect the object. This method returns
@@ -101,7 +106,17 @@ class Scene :
 #         t values are infinite.
 
 
-# A class that generates Amethyst crystals. Taking an input
+# A class that generates Amethyst crystals. This crystal class requires 14 input points that represent the position
+# of the "hexagonal prism body" of the crystal, as well as the two points that represent the tips of each amethyst
+# crystal.
+#   - These crystals rely on the "Triangle" and "Parallelogram" classes called in the import statements at the
+#     beginning of this file. These classes enable a simple tracking of spacial information based on
+#     "faces of the amethyst." Further information on this is described below.
+#   - These crystals also contain the color information, as well as specular and shine values consistent with what
+#     is outlined in the paragraphs above.
+#   - These amethysts also takes the inputs titled "RefractiveIndex" and "eRefractiveIndex." As described in the name,
+#     this is a refractive index of said amethyst, which will be used to calculate refractive rays.
+#     In this tracer, it is assumed that the index of air is 1.00000, or that this amethyst exists within a vacuum.
 class Amethyst:
     #define 14 pts to construct shape of amethyst
     def __init__( self,
@@ -115,12 +130,15 @@ class Amethyst:
         self.shine = shine
         self.RefractiveIndex = RefractiveIndex
         self.eRefractiveIndex = eRefractiveIndex
-        # Generate series of planes that make up amethyst. This code follows a pattern such that
+        # Generate a series of 3 planes that make up amethyst. This code follows a pattern such that
         # points exist as such:
         #           pt13
-        #       pt4     pt2
-        #       pt3     pt1
-        #           pt14 to generate
+        #         /     \
+        #       pt4-----pt2
+        #       |        |
+        #       pt3-----pt1
+        #         \     /
+        #           pt14 as follows:
 
         self.PlaneA = Parallelogram(pt1, pt2, pt3)
         self.UpperA = Triangle(pt2, pt13, pt4)
@@ -140,8 +158,12 @@ class Amethyst:
         self.PlaneF = Parallelogram(pt11, pt12, pt1)
         self.UpperF = Triangle(pt12, pt13, pt2)
         self.LowerF = Triangle(pt11, pt1, pt14)
-        self.canonicalAxis = pt13 - pt14
 
+        # Defined here is a canonical axis of generated crystals. This axis is typically referred to as
+        # the "optical axis" of a crystal. This axis is relative to the polarization of crystals, and the ellipsoidal
+        # field of polarization that creates birefringence. The canonical axis of quartz crystals typically goes from
+        # tip to tip, hence the calculation below.
+        self.canonicalAxis = pt13 - pt14
 
     # intersect methods calls the raytrace function. An apt description is found in
     # the raytacefunc.py file.
@@ -155,7 +177,9 @@ class Amethyst:
 
 
 
-# A class that represents ellipsoids.
+# A class that represents ellipsoids. These elipsoids operate in a standard method.
+# Further description can be found below. These ellipsoids also have
+# both RefractiveIndex and eRefractiveIndex inputs that enable extraordinary refraction.
 class Ellipsoid :
 
 
@@ -185,11 +209,15 @@ class Ellipsoid :
                                        [   0.0,        0.0,  1.0/zRadius,  -center[2,0]/zRadius ],
                                        [   0.0,        0.0,     0.0,          1.0               ] ] )
 
+    # Birenfringence is predicated on the canonical axis, temporarily, the axis of all
+    # Ellipsoids is [0,1,0,0] as they are not the main focus of this tracer.
+        self.canonicalAxis = ([[0.0], [1.0], [0.0], [0.0]])
+
 
     # Calculate intersections between this ellipsoid and a set of rays. See
     # above for a detailed description of the arguments to and results from
     # this method.
-        self.canonicalAxis = ([[0.0],[1.0],[0.0],[0.0]])
+
     def intersect( self, origins, directions ) :
 
         # Start by transforming all the rays to the ellipsoid's canonical
@@ -251,9 +279,11 @@ class Ellipsoid :
         # All done. Return the t values, intersection points, and normals.
         return finalTs, finalPoints, finalNormals
 
-
+# A trigonal prism class that models the same use of planes to generate its shape.
+# This prism also has the RefractiveIndex and eRefractiveIndex inputs to demonstrate refraction. This object
+# was made to test refraction in other scenes that could be compared to real life objects.
 class trigonalPrism:
-        # define 14 pts to construct shape of amethyst
+        # define 6 pts to construct shape of prism
         def __init__(self,
                      pt1, pt2, pt3, pt4, pt5, pt6,
                      red, green, blue, specular, shine, RefractiveIndex, eRefractiveIndex):
@@ -266,19 +296,18 @@ class trigonalPrism:
             self.RefractiveIndex = RefractiveIndex
             self.eRefractiveIndex = eRefractiveIndex
 
+            # Planes are done in a similar manner to the Amethyst class.
+            # Top triangle and bottom triangle complete the shape.
             self.PlaneA = Parallelogram(pt1, pt2, pt3)
             self.PlaneB = Parallelogram(pt3, pt4, pt5)
             self.PlaneC = Parallelogram(pt5, pt6, pt1)
             self.Top = Triangle(pt2, pt6, pt4)
             self.Bottom = Triangle(pt1, pt3, pt5)
 
-            self.toCanonical = np.array([[1.0, 0.0, 0.0, 0.0],
-                                         [0.0, 1.0, 0.0, 0.0],
-                                         [0.0, 0.0, 1.0, 0.0],
-                                         [0.0, 0.0, 0.0, 1.0]])
-            self.normal = np.array([[0.0], [1.0], [0.0], [0.0]])
+            # Canonical Axis is a simple calculation, not inherently accurate.
             self.canonicalAxis = normalize(pt2-pt1)
 
+        # Intersection method is same as amethyst
         def intersect(self, origins, directions):
             trigonalPrismObjects = [self.PlaneA, self.PlaneB, self.PlaneC, self.Top, self.Bottom]
             trigonalPrismObjects, finalPoints, finalNormals, finalTs = rayTrace(trigonalPrismObjects, origins, directions)
@@ -315,6 +344,9 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
     #gather all the refractive values of objects in scene
     refractiveIndices = np.array([e.RefractiveIndex for e in scene.elements])
     refractiveExtraordinaryIndices = np.array([e.eRefractiveIndex for e in scene.elements])
+
+    # establish the canonicalAxisIndex using the dimensionate function, which fixes the dimensions of these
+    # axes when being inherited from the parent object.
     canonicalAxisIndex = normalize(dimensionate(np.array([e.canonicalAxis for e in scene.elements])))
 
 
@@ -403,6 +435,8 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
     colors[ :, missMask ] = bkgndColor
 
 
+    # All color calculations are finished, return the result.
+
     #Generating Refraction Rays
     refractionColors = np.zeros([3, nPixels])# Initialize refraction color contributions
     # Check what surface is refractive using a mask. Values of 4 or greater represent non-refractive objects
@@ -410,92 +444,174 @@ def traceForColor( scene, origin, directions, maxDepth=1 ) :
 
     refractiveMask = (refractiveIndices[objects] < 4) & (objects >= 0)
 
-    rIndicies = 1/refractiveIndices[objects] # generate indicies of refraction
-
+    # generate ordinary indicies of refraction for snell's law calculations like in RT2
+    rIndicies = 1/refractiveIndices[objects]
+    # generate extraordinary indicies of refraction
     eIndicies = refractiveExtraordinaryIndices[objects]
+    # generate an array of the ordinary indices of refraction, this will be used in further calculations
+    # despite seeming quite useless
     oIndicies = refractiveIndices[objects]
+
+    #Establish the varying optical axes of each object in the scene.
     canonicalaxes = canonicalAxisIndex[:,objects]
 
-
-    if np.any(refractiveMask) and maxDepth >0:
-        enterrefractiveOrigins = hits[:,refractiveMask] - 1e-6*normals[:,refractiveMask] # establish origins of refraction
-    # generate refraction rays using recursion. Refraction rays are called using expansions of snells law
+    # Recursively perform refraction for a max depth>0.
+    if np.any(refractiveMask) and maxDepth > 0:
+        # establish origins of refraction
+        enterrefractiveOrigins = hits[:,refractiveMask] - 1e-6*normals[:,refractiveMask]
+        # generate direction vectors for snell's law refraction
         enterrefractions = ((rIndicies * listDot(normals, viewVectors) -
                     np.sqrt(1 - ((rIndicies) ** 2) * (1 - (listDot(normals, viewVectors)) ** 2))) * normals)- rIndicies * viewVectors
 
+        # establish direction vectors for only refractive objects using mask.
+        enterrefractiveDirections = enterrefractions[:,refractiveMask]
 
-        enterrefractiveDirections = enterrefractions[:,refractiveMask]  # establish direction vectors. Done by taking the refractions of the refractive mask.
-        # RESEARCH: Calculating extraordinary refraction direction vectors from the findings of Weidlich and Wilkie
-        extordF = (eIndicies**2)*((canonicalaxes[2,:])**2)-(oIndicies**2)*(((canonicalaxes[2,:])**2)-1) #constant F from paper
-        extordG = np.sqrt(extordF*(eIndicies**2-1+(listDot(normals,-viewVectors))**2)+(oIndicies**2-eIndicies**2)*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2)) #constant G from Paper
+        # EXTRAORDINARY CALCULATIONS BEGIN:
+        # Calculating extraordinary refraction direction vectors from the findings of Weidlich and Wilkie begins here.
+        # F and G are establish constants used throughout calculation.
+        extordF = (eIndicies**2)*((canonicalaxes[2,:])**2)-(oIndicies**2)*(((canonicalaxes[2,:])**2)-1)
+        extordG = np.sqrt(extordF*(eIndicies**2-1+(listDot(normals,-viewVectors))**2)+(oIndicies**2-eIndicies**2)*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2))
 
-        #Calculations of the actual direction vectors of ExtOrdRef. These Calculations will be broken down at a later date using smaller calculations
-        cosine1 = (((eIndicies**2 - oIndicies**2)*canonicalaxes[0,:])*(oIndicies*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2)+canonicalaxes[2,:]*extordG))/(np.sqrt((eIndicies**2)*(((eIndicies**2)*((eIndicies**2)*oIndicies*(canonicalaxes[2,:]**2)-(oIndicies**3)*((canonicalaxes[2,:]**2)-1))**2)+((eIndicies**2)-(oIndicies**2))*extordG)**2))
-        cosine2 = (extordF*extordG)/(np.sqrt((eIndicies**2)*(((eIndicies**2)*((eIndicies**2)*oIndicies*(canonicalaxes[2,:]**2)-(oIndicies**3)*((canonicalaxes[2,:]**2)-1))**2)+((eIndicies**2)-(oIndicies**2))*extordG)**2))
+        # generating direction cosines outlined in the paper
+        # denominator is the same for both cosine 1 and 2
+        denominatorOfCosines = (np.sqrt((eIndicies**2)*(((eIndicies**2)*((eIndicies**2)*oIndicies*(canonicalaxes[2,:]**2)-(oIndicies**3)*((canonicalaxes[2,:]**2)-1))**2)+((eIndicies**2)-(oIndicies**2))*extordG)**2))
+        cosine1 = (((eIndicies**2 - oIndicies**2)*canonicalaxes[0,:])*(oIndicies*canonicalaxes[1,:]*np.sqrt(1-listDot(normals, -viewVectors)**2)+canonicalaxes[2,:]*extordG))/denominatorOfCosines
+        cosine2 = (extordF*extordG)/denominatorOfCosines
+        # Cosine 3 operates like normal direction cosines do. Cosine 3 is intended to be the middle value of the 3 coordinate vector
         cosine3 = np.sqrt(1-(cosine1**2)-(cosine2**2))
+        # Make homogeneous being performed here to make the direction cosines efficiently without generating a 3x1 beforehand.
         extraordinaryRefractions = normalize(makeHomogeneous(np.array([cosine1,cosine3,cosine2]),0))
 
-        #Calculations for Local to Global Coordinate Transformation Matrices
+        # Calculations for Local to Global Coordinate Transformation Matrices
+        # This must be done for every vector containing extraordinary refraction in the scene.
+        # The rotations are ultimately attempting to rotate each normal to
+        # "align with the +z axis" for lack of a better description.
+        # This process begins with create a basis vector E1 that is perpendicular to the surface normal
+        # at an intersection. From here, a basis coordinate system is created, then a coordinate rotation matrix
+        # is created to perform the rotation of the direction vector at that intersection point such that the
+        # surface normal at said point aligns with the +z axis.
 
-        ThetasBetween = np.arccos(listDot(normals,viewVectors)) #Calculating angles between normal vectors and view vectors
-        ThetasOfRotation = ThetasBetween-(np.pi/2) #Using basic trig, we can determine our angle of rotation
-        # Generating series of vectors to make rotation matrices to make vectors that align with surface of amethyst
+
+        # Process for calculating angles between V and N
+        # find angle between
+        ThetasBetween = np.arccos(listDot(normals,viewVectors))
+        # calculate angle that vector must be rotated by
+        ThetasOfRotation = ThetasBetween-(np.pi/2)
+
+        # x and y coordinate rotation being performed
         xRotation = makeHomogeneous(makeHomogeneous(np.array([np.cos(ThetasOfRotation),np.sin(ThetasOfRotation)]),0),0)
         yRotation = makeHomogeneous(makeHomogeneous(np.array([-np.sin(ThetasOfRotation),np.cos(ThetasOfRotation)]),0),0)
+        # generate free vectors to complete these 4D rotation matrices
         free1 = np.full_like(xRotation,[[0],[0],[1],[0]])
         free2 = np.full_like(xRotation,[[0],[0],[0],[1]])
 
 
 
 
-
+        # Generate the rotation matrices for each basis vector
         RotationMatricesForE1Basis = np.transpose(np.array([xRotation,yRotation,free1,free2]))
-        E1BasisVectors = listMatricesMultiplication(RotationMatricesForE1Basis,viewVectors) # generation of aligned vector for local coord. system
+        # Now generate the E1 Basis Vectors
+        E1BasisVectors = listMatricesMultiplication(RotationMatricesForE1Basis,viewVectors)
 
 
-        E2BasisVectors = listCross(normals,E1BasisVectors) #third basic vector
+        # Code here is misc. for when calculations were potentially not symmetric
+        # Testing has shown this code is most likely symmetric and as a result there may be no use for code
+        # provided below, but it has been left here until it may not be needed.
+
+        #PhisBetween = np.arccos(listDot(normals,E1BasisVectors))
+        #for i in range(nPixels):
+            #if abs(PhisBetween[i]) > 0:
+                #pass
+            #else:
+                #PhiOfCorrection = np.pi/2
+                #xCorrection = np.array([np.cos(PhiOfCorrection), np.sin(PhiOfCorrection),0,0])
+                #yCorrection = np.array([-np.sin(PhiOfCorrection), np.cos(PhiOfCorrection), 0, 0])
+                #CorrectionMatrixofE1Vector = np.transpose(np.array([xCorrection,yCorrection,free1,free2]))
+                #E1BasisVectors[:,i] = CorrectionMatrixofE1Vector @ E1BasisVectors[:,i]
+
+        # Generate third basis vector for a local coordinate system.
+        E2BasisVectors = listCross(normals,E1BasisVectors)
+        # Create a "To Local" coordinate rotation matrix.
         toLocalMatrices = np.transpose(np.array([E1BasisVectors,normals,E2BasisVectors,free2]))
-        
-        #fromLocalMatrices = listMatrixInverse(toLocalMatrices) ignore this line
 
-        
-        #this gives us an array of the shape we'd like with most values set to 0 vectors (Due to structure of misc. transformation matrices)
-        # This practice will hopefully be more streamlined in the future.
-        transformedExtraordinaryRefractions = listMatricesMultiplication(toLocalMatrices,extraordinaryRefractions) 
-        ##BRIEF IDEA #3
+        ############################# PLEASE NOTE:#################################################################
+        # This array being generated here IS NOT THE FINAL TRANSFORMED REFRACTION DIRECTION VECTORS.
+        # We are creating an array of the correct SIZE we need for our calculations here, but we are also generating
+        # a way to eliminate places in which extraordinary refraction does not occur in our code, thus enabling us
+        # to therefore invert matrices where extraordinary refraction DOES occur. This is very important, as we need a
+        # fromLocal toGlobal coordinate rotation matrix at each intersection point.
+        #
+        # The fundamental reason for this line of code below follows the simple observation that
+        # extraordinary refraction direction vectors of the empty space in the scene all have the same values,
+        # and when multiplied by the toLocalMatrices array will generate 0 vectors as their transformed direction vector.
+        # The toLocalMatrix associated with each of these points is also non-invertible, giving us trouble when simply
+        # trying to invert every potential matrix in the scene.
+        # This is very convenient, as this means that almost no work is required to distinguish between real intersections
+        # in the scene, and where there is what we could call "air."
+        #
+        # Finally, this means that we can perform a check by looping through each pixel in the scene, and carefully
+        # distinguishing whether an actual, valid, intersection is prevalent at that location. Conveniently (almost like it was
+        # meant to be), all "valid" intersection points will generate a toLocalMatrix that CAN be inverted and thus,
+        # we can properly rotate our direction vectors of extraordinary refraction
+        transformedExtraordinaryRefractions = listMatricesMultiplication(toLocalMatrices,extraordinaryRefractions)
+
+        ############################# SEE BELOW ###################################################################
+        # Attempt #3 Final Step
+        # We are going to loop through each pixel in the scene, if a 0 vector has been yielded at such location,
+        # pass onward, as we are not concerned with optimized solutions here, simply "doing the calculation" is enough.
+        # Otherwise, we are going to recognize that refraction could be taking place at this location in the scene, and
+        # we will therefore invert the toLocalMatrix at that pixel, then multiply that value into the extraordinary
+        # refraction direction vector at that pixel, and then overwrite the old value from the
+        # "transformedExtraordinaryRefractions" with the new, correct value, and at other locations, the vectors will be
+        # a 0 vector.
         for i in range(nPixels):
             if (transformedExtraordinaryRefractions[:,i] == np.array([[0],[0],[0],[0]])).all():
                 pass
             else:
                 invMat = np.linalg.inv(toLocalMatrices[i])
-                transformedExtraordinaryRefractions[:,i] = invMat @ extraordinaryRefractions[:,i] #Filling values where there are refractions with proper calculations
+                transformedExtraordinaryRefractions[:,i] = invMat @ extraordinaryRefractions[:,i]
 
-        extraordinaryRefractiveDirections = transformedExtraordinaryRefractions[:,refractiveMask] # ExtOrd Direction Vectors
+        # We have finished. This process as stated before went for all pixels in the scene, which may lead you to question:
+        # "Isn't that including objects that aren't refractive?"
+        # and the answer is Yes! Thankfully, we have a refractive mask that can easily fix this problem.
+        # Functionality to distinguish between objects that are strictly performing ordinary refraction and
+        # objects that perform extraordinary refraction will come later.
 
-    # Recursively perform refraction for a max depth>0. This step is not necessary, but is here for further calculations down the line.
+        extraordinaryRefractiveDirections = transformedExtraordinaryRefractions[:,refractiveMask]
+
+        # misc.
         #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, enterrefractiveDirections, maxDepth - 1)
-        #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, extraordinaryRefractiveDirections, maxDepth - 1) 
+        #refractionColors[:, refractiveMask] = traceForColor(scene, enterrefractiveOrigins, extraordinaryRefractiveDirections, maxDepth - 1)
 
-        #Tracing through the amethyst
+        # Trace through object twice, using both direction vectors, to find both intersection points of exit.
+        # Then return that information
         refractiveObjects, refractiveHits, refractiveNormals, refractiveTs = rayTrace(scene.elements, enterrefractiveOrigins, enterrefractiveDirections) #ray trace is called here to learn where
         extOrdRefObjects, extraordinaryHits, extraordinaryNormals, extraordinaryTs = rayTrace(scene.elements, enterrefractiveOrigins, extraordinaryRefractiveDirections)
-        
-        #rays are now exiting the crystal
 
-        #exitrefractionMask = (refractiveObjects>=0)
+        # Refraction rays are now exiting the crystal. Thankfully, extraordinary refraction exits crystals the same way
+        # ordinary refraction does!
 
-        exitrefractiveOrigins = refractiveHits + 1e-6*refractiveNormals # establish an origin point to trace out from crystal
+        # Establish an origin point to trace out from crystal (ordinary)
+        exitrefractiveOrigins = refractiveHits + 1e-6*refractiveNormals
+        # generate indices of refraction for exiting behavior. We now need two exit values as stated before and they
+        # need to be of the right size to calculate the direction vectors properly. Thus, they're called on the refractive objects.
         exitrIndicies = refractiveIndices[refractiveObjects]
         exiteIndicies = refractiveExtraordinaryIndices[refractiveObjects]
+        # establish extraordinary exit points
         exitextraordinaryOrigins = extraordinaryHits + 1e-6*extraordinaryNormals
 
+        # calculate ordinary exit direction vectors
         exitrefractions = ((exitrIndicies*listDot(-refractiveNormals,-enterrefractiveDirections)-
                         np.sqrt(1-((exitrIndicies)**2) * (1-(listDot(-refractiveNormals,-enterrefractiveDirections))**2)))*(-refractiveNormals)) - exitrIndicies*-enterrefractiveDirections
-        exitrefractiveDirections = exitrefractions #establish direction vectors. This step is unnecessary but makes code cleaner
+        # Misc. step for my sanity
+        exitrefractiveDirections = exitrefractions
+        # calculate extraordinary exit direction vectors
         exitextordRefractions = ((exiteIndicies*listDot(-extraordinaryNormals,-extraordinaryRefractiveDirections)-
                         np.sqrt(1-((exiteIndicies)**2) * (1-(listDot(-extraordinaryNormals,-extraordinaryRefractiveDirections))**2)))*(-extraordinaryNormals)) - exiteIndicies*-extraordinaryRefractiveDirections
-        exitextordDirections = exitextordRefractions #establish direction vectors. This step is unnecessary but makes code cleaner
+        # misc. step TWO for my sanity
+        exitextordDirections = exitextordRefractions
 
+        # generate refraction colors of the scene.
         refractionColors[:,refractiveMask] += traceForColor(scene, exitrefractiveOrigins, exitrefractiveDirections, maxDepth - 1) #trace rays for color recursively
         refractionColors[:, refractiveMask] += traceForColor(scene, exitextraordinaryOrigins,exitextordDirections, maxDepth - 1)
 
@@ -562,7 +678,7 @@ def oneAmethystScene() :
 def oneAmethystandoneSphereScene() :
     scaleval=0.5
     # for copy/pasting /scaleval
-    return Scene( np.array( [ [10.0], [2.0], [20.0], [1.0] ] ), 0.0,
+    return Scene( np.array( [ [-10.0], [2.0], [20.0], [1.0] ] ), 0.0,
                    [Amethyst( np.array( [ [0.25/np.sqrt(3)], [-1.67], [-0.75], [1.0] ] ),
                               np.array( [ [0.25/np.sqrt(3)], [1.67], [-0.75], [1.0] ] ),
                               np.array( [ [-0.25/np.sqrt(3)], [-1.67], [-0.75], [1.0] ] ),
@@ -577,7 +693,7 @@ def oneAmethystandoneSphereScene() :
                               np.array( [ [np.sqrt((0.25/np.sqrt(3))**2+(0.75)**2)], [1.67], [-1.0], [1.0] ] ),
                               np.array([[0.0], [2.5], [-1.0], [1.0]]),
                               np.array( [ [0.0], [-2.5], [-1.0], [1.0] ] ),
-                              0.5,0.12,0.5,0.1,1, 1.54425, 1.55325),
+                              0.8,0.12,0.8,0.1,1, 1.54425, 1.55325),
                         Ellipsoid(np.array([[0.0], [0.0], [-7.0], [1.0]]),
                                12.0, 0.5, 0.5,
                                1.0, 0.0, 0.0, 0.8, 1.0,4.5, 1.0) ] )
@@ -666,7 +782,7 @@ def trigonalPrismScene3() :
                                np.array([[-0.5], [-1.0],[-1.9375],[1.0]]),
                                np.array([[-0.5], [1.0],[-1.9375],[1.0]]),
                                np.array([[0.5], [-1.0],[-1.9375],[1.0]]),
-                               np.array([[0.5], [1.0],[-1.9375],[1.0]]),1.0,0.0,0.0,0.1,1,1.25,1.0),
+                               np.array([[0.5], [1.0],[-1.9375],[1.0]]),1.0,0.0,0.0,0.1,1,1.25,1.55),
                   Ellipsoid(np.array([[0.0], [0.0], [-3.0], [1.0]]),
                             6.0, 0.25, 0.5,
                             1.0, 0.0, 0.0, 0.8, 1.0, 4.5,1.0),
@@ -730,7 +846,7 @@ def AmethystaAndCheckerBoardScene():
 
 # Set up the scene.
 
-scene = oneAmethystandoneSphereScene()
+scene = AmethystaAndCheckerBoardScene()
 
 
 # Define the focal point and image grid. For this ray tracer, the image grid
@@ -742,7 +858,7 @@ scene = oneAmethystandoneSphereScene()
 focusZ = 0.65                         # Z coordinate of focal point
 focus = np.array( [ [0.0], [0.0], [focusZ], [1.0] ] )
 
-nPixels = 1024                    # Number of pixels in each dimension of the image
+nPixels = 512                   # Number of pixels in each dimension of the image
 totalPixels = nPixels * nPixels         # Total number of pixels in the image
 
 imageLeft = -1.0                        # X coordinate of left edge of image
