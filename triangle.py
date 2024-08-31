@@ -1,3 +1,11 @@
+# Adapted by Frank Bubbico (February 2024) from Doug Baldwin
+# The purpose of this file is to provide triangle objects for varying purposes.
+
+# This triangle class is designed to contain no color information, only spatial information. This allows for the
+# object to be called later as a piece of the amethyst class. This will also be used in other object classes in a
+# similar way. This class is not unlike the first parallelogram class from parallelogram.py. The code varies in
+# generating the shape from the E1/E2 vectors.
+
 import numpy as np
 from RayTracingUtilities import  normalize, \
     listLength
