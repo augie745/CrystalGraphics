@@ -1,4 +1,4 @@
-# A ray tracer for scenes consisting of multiple ellipsoids and triangles lit
+# A ray tracer for scenes consisting of crystals and ellipsoids lit
 # by a single white point light source and some amount of white ambient light.
 #
 # The overall program design is as follows:
@@ -7,8 +7,9 @@
 #     The color and radiant intensity of the light source is set for all scenes
 #     in the "traceForColor" function, while ambient light is always white,
 #     with an irradiance set independently for each scene.
-#   - Geometric objects (amethysts and ellipsoids) are instances of canonical
-#     objects. They know their color, their transformation from global to
+#   - The geometric objects listed within this scene are Amethysts and Ellipsoids.
+#     The ellipsoids here are canonical, while Amethysts in this tracer must be defined by
+#     all vertices. They know their color, their transformation from global to
 #     canonical coordinates, and how to detect intersections between themselves
 #     and rays. The result of these intersection calculations is three pieces
 #     of information: the global points at which intersections happen, the
@@ -35,8 +36,8 @@
 #     values in the final image to the required range.
 
 # History:
-#
-#   October 2021 -- Created by Doug Baldwin as a demonstration for Math 384.
+#   Created February 2024 by Frank Bubbico. Adapted from Doug Baldwin's "triangles.py" (October 2021)
+
 
 
 from RayTracingUtilities import listify, delistify, makeHomogeneous, normalize, \
@@ -94,7 +95,14 @@ class Scene :
 #         t values are infinite.
 
 
-# A class that generates Amethyst crystals. Taking an input
+# A class that generates Amethyst crystals. This crystal class requires 14 input points that represent the position
+# of the "hexagonal prism body" of the crystal, as well as the two points that represent the tips of each amethyst
+# crystal.
+#   - These crystals rely on the "Triangle" and "Parallelogram" classes called in the import statements at the
+#      beginning of this file. These classes enable a simple tracking of spacial information based on
+#      "faces of the amethyst." Further information on this is described below.
+#   - These crystals also contain the color information, as well as specular and shine values consistent with what
+#     is outlined in the paragraphs above.
 class Amethyst:
     #define 14 pts to construct shape of amehtyst
     def __init__( self,
@@ -106,12 +114,15 @@ class Amethyst:
         self.blue = blue
         self.specular = specular
         self.shine = shine
-        # Generate series of planes that make up amethyst. This code follows a pattern such that
+        # Generate a series of 3 planes that make up amethyst. This code follows a pattern such that
         # points exist as such:
         #           pt13
-        #       pt4     pt2
-        #       pt3     pt1
-        #           pt14 to generate
+        #         /     \
+        #       pt4-----pt2
+        #       |        |
+        #       pt3-----pt1
+        #         \     /
+        #           pt14 as follows:
 
         self.PlaneA = Parallelogram(pt1, pt2, pt3)
         self.UpperA = Triangle(pt2, pt13, pt4)
@@ -132,11 +143,12 @@ class Amethyst:
         self.UpperF = Triangle(pt12, pt13, pt2)
         self.LowerF = Triangle(pt11, pt1, pt14)
 
-        self.toCanonical = np.array( [ [ 1.0, 0.0, 0.0, 0.0],
-                                    [   0.0, 1.0, 0.0, 0.0],
-                                    [   0.0, 0.0, 1.0, 0.0],
-                                    [   0.0, 0.0, 0.0, 1.0] ] )
-        self.normal = np.array([[0.0],[1.0],[0.0],[0.0]])
+        # Information for pending work.
+        #self.toCanonical = np.array( [ [ 1.0, 0.0, 0.0, 0.0],
+        #                            [   0.0, 1.0, 0.0, 0.0],
+        #                            [   0.0, 0.0, 1.0, 0.0],
+        #                            [   0.0, 0.0, 0.0, 1.0] ] )
+        #self.normal = np.array([[0.0],[1.0],[0.0],[0.0]])
 
     # intersect methods calls the raytrace function. An apt description is found in
     # the raytacefunc.py file.
@@ -144,13 +156,16 @@ class Amethyst:
         amethystObjects = [self.PlaneA, self.UpperA, self.LowerA, self.PlaneB, self.UpperB, self.LowerB,
                            self.PlaneC, self.UpperC, self.LowerC, self.PlaneD, self.UpperD, self.LowerD,
                            self.PlaneE, self.UpperE, self.LowerE, self.PlaneF, self.UpperF, self.LowerF]
+        #Code below was for testing generating one series of planes of the amethyst, this was done in service of
+        # validating all normals point outward from the object (thus enabling visible crystals).
         #amethystObjects = [self.PlaneA, self.UpperA, self.LowerA]
         amethystObjects, finalPoints, finalNormals, finalTs = rayTrace(amethystObjects, origins, directions)
         return finalTs, finalPoints, finalNormals
 
 
 
-# A class that represents ellipsoids.
+# A class that represents ellipsoids. These elipsoids operate in a standard method.
+# Further description can be found below.
 class Ellipsoid :
 
 
@@ -243,11 +258,6 @@ class Ellipsoid :
 
         # All done. Return the t values, intersection points, and normals.
         return finalTs, finalPoints, finalNormals
-
-
-
-
-
 
 
 # The function that traces a set of rays from a single origin through a scene,
@@ -386,7 +396,7 @@ def scaleColor( pixels ) :
 
 
 
-# A scene consisting of a single matte white amethyst, standing upright
+# A scene consisting of a single matte purple amethyst, standing upright
 # in front of the viewer.  This is the most basic test. Functions called here are the
 #amethyst and scene functions.
 
@@ -409,6 +419,26 @@ def oneAmethystScene() :
                               np.array( [ [0.0], [-2.5], [-1.0], [1.0] ] ),
                               0.8,0.12,0.8,.45,1) ] )
 
+# A scene containing the same purple amethyst with a white sphere.
+def oneAmethystSceneAndOneSphereScene():
+    return Scene(np.array([[2.0], [8.0], [10.0], [1.0]]), 0.0,
+                 [Amethyst(np.array([[0.25 / np.sqrt(3)], [-1.2], [-0.75], [1.0]]),
+                           np.array([[0.25 / np.sqrt(3)], [1.2], [-0.75], [1.0]]),
+                           np.array([[-0.25 / np.sqrt(3)], [-1.2], [-0.75], [1.0]]),
+                           np.array([[-0.25 / np.sqrt(3)], [1.2], [-0.75], [1.0]]),
+                           np.array([[-np.sqrt((0.25 / np.sqrt(3)) ** 2 + (0.75) ** 2)], [-1.2], [-1.0], [1.0]]),
+                           np.array([[-np.sqrt((0.25 / np.sqrt(3)) ** 2 + (0.75) ** 2)], [1.2], [-1.0], [1.0]]),
+                           np.array([[-0.25 / np.sqrt(3)], [-1.2], [-1.25], [1.0]]),
+                           np.array([[-0.25 / np.sqrt(3)], [1.2], [-1.25], [1.0]]),
+                           np.array([[0.25 / np.sqrt(3)], [-1.2], [-1.25], [1.0]]),
+                           np.array([[0.25 / np.sqrt(3)], [1.2], [-1.25], [1.0]]),
+                           np.array([[np.sqrt((0.25 / np.sqrt(3)) ** 2 + (0.75) ** 2)], [-1.2], [-1.0], [1.0]]),
+                           np.array([[np.sqrt((0.25 / np.sqrt(3)) ** 2 + (0.75) ** 2)], [1.2], [-1.0], [1.0]]),
+                           np.array([[0.0], [2.0], [-1.0], [1.0]]),
+                           np.array([[0.0], [-2.0], [-1.0], [1.0]]),
+                           0.8, 0.12, 0.8, .45, 1),
+                  Ellipsoid(np.array([[3.0], [2.0], [-3.0], [1.0]]),1.0,1.0,1.0,0.9,0.9,0.9,.42,1)])
+
 
 # The main program. This creates a scene to render, defines the viewer's
 # position and rays from that point through the pixels of a virtual image grid,
@@ -416,7 +446,7 @@ def oneAmethystScene() :
 
 # Set up the scene.
 
-scene = oneAmethystScene()
+scene = oneAmethystSceneAndOneSphereScene()
 
 
 # Define the focal point and image grid. For this ray tracer, the image grid
